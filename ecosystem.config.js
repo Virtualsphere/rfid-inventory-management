@@ -10,7 +10,7 @@ module.exports = {
       args:
         "-Xms128m -Xmx384m " +
         "-jar target/rfid-asset-tracking-backend.jar " +
-        "--server.port=8080",
+        "--server.port=8089",
       cwd: "/home/rfid-inventory-management", // matches this server's actual clone path
       exec_mode: "fork",
       instances: 1,
