@@ -10,7 +10,6 @@ module.exports = {
       args:
         "-Xms128m -Xmx384m " +
         "-jar target/rfid-asset-tracking-backend.jar " +
-        "--spring.config.location=file:./application.properties " +
         "--server.port=8080",
       cwd: "/home/rfid-inventory-management", // matches this server's actual clone path
       exec_mode: "fork",
