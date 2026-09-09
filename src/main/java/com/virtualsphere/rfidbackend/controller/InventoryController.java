@@ -4,6 +4,8 @@ import com.virtualsphere.rfidbackend.dto.InventoryRequest;
 import com.virtualsphere.rfidbackend.dto.InventoryResponse;
 import com.virtualsphere.rfidbackend.dto.InventorySyncRequest;
 import com.virtualsphere.rfidbackend.dto.InventorySyncResponse;
+import com.virtualsphere.rfidbackend.dto.ScanLogRequest;
+import com.virtualsphere.rfidbackend.dto.ScanLogResponse;
 import com.virtualsphere.rfidbackend.dto.ScanVerifyRequest;
 import com.virtualsphere.rfidbackend.dto.ScanVerifyResponse;
 import com.virtualsphere.rfidbackend.exception.ResourceNotFoundException;
@@ -102,6 +104,19 @@ public class InventoryController {
     public InventorySyncResponse sync(@Valid @RequestBody InventorySyncRequest request,
                                        @AuthenticationPrincipal UserDetails principal) {
         return inventoryService.syncEvents(request, currentUser(principal));
+    }
+
+    /**
+     * Mobile "Scan Inventory" single ad hoc tag scan: classifies and logs one
+     * EPC for the record (Found / Unexpected / Unknown / Unavailable - see
+     * ScanCategory), backing the "Single scans" report tab. Use this instead
+     * of the plain GET /{epc} lookup when the scan should count toward the
+     * report; use the plain GET for a read-only peek that shouldn't.
+     */
+    @PostMapping("/scan-log")
+    public ScanLogResponse scanLog(@Valid @RequestBody ScanLogRequest request,
+                                    @AuthenticationPrincipal UserDetails principal) {
+        return inventoryService.logScan(request, currentUser(principal));
     }
 
     /**

@@ -26,4 +26,7 @@ public class ScanVerifyRequest {
      * of the moment it reached the server. Defaults to "now" if omitted.
      */
     private LocalDateTime scannedAt;
+
+    /** Optional - how long the scan pass took on the handheld, in seconds. Shown as "Scan Duration" in the report. */
+    private Integer durationSeconds;
 }

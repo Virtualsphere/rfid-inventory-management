@@ -4,6 +4,8 @@ import com.virtualsphere.rfidbackend.dto.InventoryRequest;
 import com.virtualsphere.rfidbackend.dto.InventoryResponse;
 import com.virtualsphere.rfidbackend.dto.InventorySyncRequest;
 import com.virtualsphere.rfidbackend.dto.InventorySyncResponse;
+import com.virtualsphere.rfidbackend.dto.ScanLogRequest;
+import com.virtualsphere.rfidbackend.dto.ScanLogResponse;
 import com.virtualsphere.rfidbackend.dto.ScanVerifyRequest;
 import com.virtualsphere.rfidbackend.dto.ScanVerifyResponse;
 import com.virtualsphere.rfidbackend.dto.SyncEventRequest;
@@ -27,6 +29,7 @@ public class InventoryService {
 
     private final InventoryItemRepository inventoryItemRepository;
     private final ActivityLogService activityLogService;
+    private final ScanReportService scanReportService;
 
     /**
      * Non-admin users are always scoped to their own assigned location, regardless
@@ -110,9 +113,14 @@ public class InventoryService {
     }
 
     /**
-     * Mobile "bulk scan verification" workflow (BRD 2.1.2): compares every EPC the
-     * handheld actually scanned at a location against everything the system expects
-     * to be there (status = IN). Anything expected but not scanned is flagged MISSING.
+     * Mobile "bulk scan verification" workflow (BRD 2.1.2): classifies every EPC
+     * the handheld scanned against the inventory table, and every EPC the system
+     * expected (status=IN) at this location against what got scanned. Result is
+     * five mutually exclusive buckets - FOUND (registered here, was IN),
+     * MISSING (registered here as IN, not scanned), UNEXPECTED (registered, but
+     * at a different location), UNKNOWN (not registered anywhere), UNAVAILABLE
+     * (registered here, but wasn't IN before this scan) - persisted as a
+     * ScanReport so the result is backend-truth, not device-computed.
      */
     @Transactional
     public ScanVerifyResponse scanVerify(ScanVerifyRequest request, User requester) {
@@ -122,6 +130,7 @@ public class InventoryService {
             throw new AccessDeniedException("You can only verify inventory at your assigned location");
         }
 
+        LocalDateTime scanTime = request.getScannedAt() != null ? request.getScannedAt() : LocalDateTime.now();
         Set<String> scannedEpcs = request.getScannedEpcs().stream()
                 .filter(Objects::nonNull)
                 .map(String::toUpperCase)
@@ -129,29 +138,121 @@ public class InventoryService {
 
         List<InventoryItem> expected =
                 inventoryItemRepository.findAllByLocationIgnoreCaseAndStatus(request.getLocation(), InventoryStatus.IN);
+        Set<String> expectedEpcs = expected.stream().map(i -> i.getEpc().toUpperCase()).collect(Collectors.toSet());
 
-        List<InventoryItem> missing = new ArrayList<>();
-        int scannedCount = 0;
-        LocalDateTime scanTime = request.getScannedAt() != null ? request.getScannedAt() : LocalDateTime.now();
+        Map<String, InventoryItem> scannedByEpc = inventoryItemRepository.findAllByEpcIn(scannedEpcs).stream()
+                .collect(Collectors.toMap(i -> i.getEpc().toUpperCase(), i -> i));
 
-        for (InventoryItem item : expected) {
-            if (scannedEpcs.contains(item.getEpc().toUpperCase())) {
+        List<InventoryItem> found = new ArrayList<>();
+        List<InventoryItem> unexpected = new ArrayList<>();
+        List<InventoryItem> unavailable = new ArrayList<>();
+        List<String> unknown = new ArrayList<>();
+        List<ScanReportItem> reportItems = new ArrayList<>();
+
+        for (String epc : scannedEpcs) {
+            InventoryItem item = scannedByEpc.get(epc);
+
+            if (item == null) {
+                unknown.add(epc);
+                reportItems.add(ScanReportService.item(epc, ScanCategory.UNKNOWN, null, null, null));
+                continue;
+            }
+
+            boolean sameLocation = item.getLocation() != null
+                    && item.getLocation().equalsIgnoreCase(request.getLocation());
+
+            if (!sameLocation) {
+                unexpected.add(item);
+                reportItems.add(ScanReportService.item(epc, ScanCategory.UNEXPECTED, item.getProductName(),
+                        item.getLocation(), item.getStatus()));
+            } else if (item.getStatus() == InventoryStatus.IN) {
                 item.setLastScannedAt(scanTime);
-                scannedCount++;
+                found.add(item);
+                reportItems.add(ScanReportService.item(epc, ScanCategory.FOUND, item.getProductName(),
+                        item.getLocation(), item.getStatus()));
             } else {
-                item.setStatus(InventoryStatus.MISSING);
-                missing.add(item);
+                InventoryStatus previous = item.getStatus();
+                item.setLastScannedAt(scanTime);
+                unavailable.add(item);
+                reportItems.add(ScanReportService.item(epc, ScanCategory.UNAVAILABLE, item.getProductName(),
+                        item.getLocation(), previous));
             }
         }
-        inventoryItemRepository.saveAll(expected);
+
+        List<InventoryItem> missing = expected.stream()
+                .filter(i -> !scannedEpcs.contains(i.getEpc().toUpperCase()))
+                .toList();
+        missing.forEach(i -> {
+            i.setStatus(InventoryStatus.MISSING);
+            reportItems.add(ScanReportService.item(i.getEpc(), ScanCategory.MISSING, i.getProductName(),
+                    i.getLocation(), InventoryStatus.IN));
+        });
+
+        inventoryItemRepository.saveAll(found);
+        inventoryItemRepository.saveAll(unavailable);
+        inventoryItemRepository.saveAll(missing);
 
         for (InventoryItem m : missing) {
             activityLogService.log(m.getEpc(), ActivityAction.MISSING_DETECTED, requester.getUsername(),
                     request.getLocation(), "Marked IN but not found during physical scan verification", scanTime);
         }
 
-        return new ScanVerifyResponse(expected.size(), scannedCount, missing.size(),
-                missing.stream().map(InventoryResponse::from).toList());
+        ScanReport report = scanReportService.save(ScanReportType.BULK, request.getLocation(),
+                requester.getUsername(), scanTime, request.getDurationSeconds(), expectedEpcs.size(), reportItems);
+
+        return new ScanVerifyResponse(report.getId(), expected.size(), scannedEpcs.size(), missing.size(),
+                found.size(), unexpected.size(), unknown.size(), unavailable.size(),
+                missing.stream().map(InventoryResponse::from).toList(),
+                unexpected.stream().map(InventoryResponse::from).toList(),
+                unknown,
+                unavailable.stream().map(InventoryResponse::from).toList());
+    }
+
+    /**
+     * Mobile "Scan Inventory" single ad hoc tag scan: classifies one EPC the
+     * same way scanVerify does (minus MISSING, which only makes sense for a
+     * full-location pass) and logs it as a one-item ScanReport for the
+     * "Single scans" report tab.
+     */
+    @Transactional
+    public ScanLogResponse logScan(ScanLogRequest request, User requester) {
+        String location = request.getLocation() != null ? request.getLocation() : requester.getLocation();
+        if (requester.getRole() == Role.USER
+                && requester.getLocation() != null
+                && location != null
+                && !requester.getLocation().equalsIgnoreCase(location)) {
+            throw new AccessDeniedException("You can only log scans for your assigned location");
+        }
+
+        LocalDateTime scanTime = request.getScannedAt() != null ? request.getScannedAt() : LocalDateTime.now();
+        String epc = request.getEpc().toUpperCase();
+        InventoryItem item = inventoryItemRepository.findByEpcIgnoreCase(epc).orElse(null);
+
+        ScanCategory category;
+        InventoryResponse responseItem = null;
+
+        if (item == null) {
+            category = ScanCategory.UNKNOWN;
+        } else if (location == null || !location.equalsIgnoreCase(item.getLocation())) {
+            category = ScanCategory.UNEXPECTED;
+            responseItem = InventoryResponse.from(item);
+        } else if (item.getStatus() == InventoryStatus.IN) {
+            category = ScanCategory.FOUND;
+            item.setLastScannedAt(scanTime);
+            responseItem = InventoryResponse.from(inventoryItemRepository.save(item));
+        } else {
+            category = ScanCategory.UNAVAILABLE;
+            item.setLastScannedAt(scanTime);
+            responseItem = InventoryResponse.from(inventoryItemRepository.save(item));
+        }
+
+        ScanReportItem reportItem = ScanReportService.item(epc, category,
+                item != null ? item.getProductName() : null, item != null ? item.getLocation() : null,
+                item != null ? item.getStatus() : null);
+        ScanReport report = scanReportService.save(ScanReportType.SINGLE, location, requester.getUsername(),
+                scanTime, null, null, List.of(reportItem));
+
+        return new ScanLogResponse(report.getId(), epc, category.name(), responseItem);
     }
 
     /**
