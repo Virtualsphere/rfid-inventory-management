@@ -3,20 +3,28 @@ package com.virtualsphere.rfidbackend.controller;
 import com.virtualsphere.rfidbackend.dto.ScanReportDetailResponse;
 import com.virtualsphere.rfidbackend.dto.ScanReportItemResponse;
 import com.virtualsphere.rfidbackend.dto.ScanReportSummaryResponse;
+import com.virtualsphere.rfidbackend.dto.SingleReportExportRequest;
 import com.virtualsphere.rfidbackend.exception.ResourceNotFoundException;
 import com.virtualsphere.rfidbackend.model.Role;
 import com.virtualsphere.rfidbackend.model.ScanReport;
+import com.virtualsphere.rfidbackend.model.ScanReportItem;
 import com.virtualsphere.rfidbackend.model.ScanReportType;
 import com.virtualsphere.rfidbackend.model.User;
 import com.virtualsphere.rfidbackend.repository.UserRepository;
+import com.virtualsphere.rfidbackend.service.ExcelReportService;
 import com.virtualsphere.rfidbackend.service.ScanReportService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -31,7 +39,11 @@ import java.util.List;
 @RequiredArgsConstructor
 public class ReportController {
 
+    private static final MediaType XLSX = MediaType.parseMediaType(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+
     private final ScanReportService scanReportService;
+    private final ExcelReportService excelReportService;
     private final UserRepository userRepository;
 
     @GetMapping("/single")
@@ -66,6 +78,65 @@ public class ReportController {
         return detail(id, principal);
     }
 
+    /**
+     * Excel export for one bulk scan-verify session - the mobile app's
+     * "Export" button on the Bulk Scan report screen. Two sheets: Summary
+     * (header/counts) and Items (every EPC with its category).
+     */
+    @GetMapping("/bulk/{id}/export")
+    public ResponseEntity<byte[]> bulkExport(@PathVariable Long id, @AuthenticationPrincipal UserDetails principal) {
+        User requester = currentUser(principal);
+        ScanReport report = scanReportService.getById(id);
+        assertAccess(requester, report);
+
+        List<ScanReportItem> items = scanReportService.getItems(id);
+        byte[] workbook = excelReportService.bulkReportWorkbook(report, items);
+        return excelResponse(workbook, "bulk-scan-report-" + id + ".xlsx");
+    }
+
+    /**
+     * Excel export for a one-by-one scanning session - the mobile app calls
+     * scan-log once per tag, collects each response's reportId client-side,
+     * and posts the whole list here when the operator taps "Export". One
+     * combined workbook covering every scan in that session.
+     */
+    @PostMapping("/single/export")
+    public ResponseEntity<byte[]> singleExport(@Valid @RequestBody SingleReportExportRequest request,
+                                                @AuthenticationPrincipal UserDetails principal) {
+        User requester = currentUser(principal);
+        List<ScanReport> reports = scanReportService.getByIds(request.getReportIds());
+
+        for (ScanReport report : reports) {
+            if (report.getType() != ScanReportType.SINGLE) {
+                throw new IllegalArgumentException("Report " + report.getId() + " is not a single-scan report");
+            }
+            assertAccess(requester, report);
+        }
+
+        List<Long> ids = reports.stream().map(ScanReport::getId).toList();
+        List<ScanReportItem> items = scanReportService.getItems(ids);
+        byte[] workbook = excelReportService.singleReportsWorkbook(reports, items);
+        return excelResponse(workbook, "single-scan-report-" + LocalDate.now() + ".xlsx");
+    }
+
+    private ResponseEntity<byte[]> excelResponse(byte[] workbook, String filename) {
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+                .contentType(XLSX)
+                .body(workbook);
+    }
+
+    private void assertAccess(User requester, ScanReport report) {
+        if (requester.getRole() == Role.USER) {
+            boolean ownScan = requester.getUsername().equalsIgnoreCase(report.getPerformedBy());
+            boolean ownLocation = requester.getLocation() != null
+                    && requester.getLocation().equalsIgnoreCase(report.getLocation());
+            if (!ownScan && !ownLocation) {
+                throw new AccessDeniedException("You do not have access to report " + report.getId());
+            }
+        }
+    }
+
     private List<ScanReportSummaryResponse> list(ScanReportType type, String location, String performedBy,
                                                   LocalDateTime from, LocalDateTime to, int limit,
                                                   UserDetails principal) {
@@ -82,15 +153,7 @@ public class ReportController {
     private ScanReportDetailResponse detail(Long id, UserDetails principal) {
         User requester = currentUser(principal);
         ScanReport report = scanReportService.getById(id);
-
-        if (requester.getRole() == Role.USER) {
-            boolean ownScan = requester.getUsername().equalsIgnoreCase(report.getPerformedBy());
-            boolean ownLocation = requester.getLocation() != null
-                    && requester.getLocation().equalsIgnoreCase(report.getLocation());
-            if (!ownScan && !ownLocation) {
-                throw new AccessDeniedException("You do not have access to this report");
-            }
-        }
+        assertAccess(requester, report);
 
         List<ScanReportItemResponse> items = scanReportService.getItems(id).stream()
                 .map(ScanReportItemResponse::from)

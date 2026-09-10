@@ -15,6 +15,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Persists and serves scan reports - the backend-truth version of what the
@@ -75,8 +77,27 @@ public class ScanReportService {
                 .orElseThrow(() -> new ResourceNotFoundException("Scan report not found: " + id));
     }
 
+    /** Preserves the order/duplicates of the requested ids - important for a multi-id export request. */
+    public List<ScanReport> getByIds(List<Long> ids) {
+        Map<Long, ScanReport> byId = scanReportRepository.findAllById(ids).stream()
+                .collect(Collectors.toMap(ScanReport::getId, r -> r));
+        return ids.stream()
+                .map(id -> {
+                    ScanReport report = byId.get(id);
+                    if (report == null) {
+                        throw new ResourceNotFoundException("Scan report not found: " + id);
+                    }
+                    return report;
+                })
+                .toList();
+    }
+
     public List<ScanReportItem> getItems(Long reportId) {
         return scanReportItemRepository.findAllByReportId(reportId);
+    }
+
+    public List<ScanReportItem> getItems(List<Long> reportIds) {
+        return scanReportItemRepository.findAllByReportIdIn(reportIds);
     }
 
     public static ScanReportItem item(String epc, ScanCategory category, String productName,
