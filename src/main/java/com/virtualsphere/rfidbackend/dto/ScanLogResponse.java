@@ -1,4 +1,6 @@
 package com.virtualsphere.rfidbackend.dto;
 
-public record ScanLogResponse(Long reportId, String epc, String category, InventoryResponse item) {
+import com.virtualsphere.rfidbackend.model.ScanCategory;
+
+public record ScanLogResponse(Long reportId, String epc, ScanCategory category, InventoryResponse item) {
 }

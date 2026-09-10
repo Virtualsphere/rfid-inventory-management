@@ -17,6 +17,7 @@ public record ScanVerifyResponse(
         int totalUnexpected,
         int totalUnknown,
         int totalUnavailable,
+        List<InventoryResponse> foundItems,
         List<InventoryResponse> missingItems,
         List<InventoryResponse> unexpectedItems,
         List<String> unknownEpcs,

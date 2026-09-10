@@ -33,7 +33,7 @@ public class AuthController {
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
         String token = jwtService.generateToken(user);
-        return new LoginResponse(token, user.getUsername(), user.getFullName(), user.getRole().name(), user.getLocation());
+        return new LoginResponse(token, user.getUsername(), user.getFullName(), user.getRole(), user.getLocation());
     }
 
     @GetMapping("/me")

@@ -202,6 +202,7 @@ public class InventoryService {
 
         return new ScanVerifyResponse(report.getId(), expected.size(), scannedEpcs.size(), missing.size(),
                 found.size(), unexpected.size(), unknown.size(), unavailable.size(),
+                found.stream().map(InventoryResponse::from).toList(),
                 missing.stream().map(InventoryResponse::from).toList(),
                 unexpected.stream().map(InventoryResponse::from).toList(),
                 unknown,
@@ -252,7 +253,7 @@ public class InventoryService {
         ScanReport report = scanReportService.save(ScanReportType.SINGLE, location, requester.getUsername(),
                 scanTime, null, null, List.of(reportItem));
 
-        return new ScanLogResponse(report.getId(), epc, category.name(), responseItem);
+        return new ScanLogResponse(report.getId(), epc, category, responseItem);
     }
 
     /**
