@@ -14,6 +14,7 @@ import com.virtualsphere.rfidbackend.model.InventoryStatus;
 import com.virtualsphere.rfidbackend.model.User;
 import com.virtualsphere.rfidbackend.repository.UserRepository;
 import com.virtualsphere.rfidbackend.service.InventoryService;
+import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
@@ -43,6 +44,7 @@ public class InventoryController {
     private final UserRepository userRepository;
 
     @GetMapping
+    @Operation(tags = "Admin - Inventory")
     public List<InventoryResponse> list(
             @RequestParam(required = false) String q,
             @RequestParam(required = false) InventoryStatus status,
@@ -58,18 +60,21 @@ public class InventoryController {
     }
 
     @GetMapping("/{epc}")
+    @Operation(tags = "Admin - Inventory")
     public InventoryResponse getByEpc(@PathVariable String epc, @AuthenticationPrincipal UserDetails principal) {
         return InventoryResponse.from(inventoryService.findByEpc(epc, currentUser(principal)));
     }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
+    @Operation(tags = "Admin - Inventory")
     public InventoryResponse create(@Valid @RequestBody InventoryRequest request,
                                      @AuthenticationPrincipal UserDetails principal) {
         return InventoryResponse.from(inventoryService.create(request, currentUser(principal)));
     }
 
     @PutMapping("/{id}")
+    @Operation(tags = "Admin - Inventory")
     public InventoryResponse update(@PathVariable Long id, @Valid @RequestBody InventoryRequest request,
                                      @AuthenticationPrincipal UserDetails principal) {
         return InventoryResponse.from(inventoryService.update(id, request, currentUser(principal)));
@@ -77,6 +82,7 @@ public class InventoryController {
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
+    @Operation(tags = "Admin - Inventory")
     public void delete(@PathVariable Long id, @AuthenticationPrincipal UserDetails principal) {
         inventoryService.delete(id, currentUser(principal).getUsername());
     }
@@ -127,6 +133,7 @@ public class InventoryController {
      * the missing-items report.
      */
     @GetMapping("/export")
+    @Operation(tags = "Admin - Inventory")
     public ResponseEntity<byte[]> export(
             @RequestParam(required = false) String q,
             @RequestParam(required = false) InventoryStatus status,

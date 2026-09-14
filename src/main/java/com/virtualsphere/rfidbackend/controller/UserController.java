@@ -3,6 +3,7 @@ package com.virtualsphere.rfidbackend.controller;
 import com.virtualsphere.rfidbackend.dto.UserRequest;
 import com.virtualsphere.rfidbackend.dto.UserResponse;
 import com.virtualsphere.rfidbackend.service.UserService;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -17,6 +18,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/users")
 @RequiredArgsConstructor
+@Tag(name = "Admin - Users")
 public class UserController {
 
     private final UserService userService;
