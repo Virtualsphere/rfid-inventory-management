@@ -11,6 +11,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashSet;
 import java.util.List;
 
 @Service
@@ -45,6 +46,7 @@ public class UserService {
         user.setRole(request.getRole() == null ? Role.USER : request.getRole());
         user.setLocation(request.getLocation());
         user.setActive(request.getActive() == null || request.getActive());
+        user.setPermissions(request.getPermissions() == null ? new HashSet<>() : new HashSet<>(request.getPermissions()));
         return userRepository.save(user);
     }
 
@@ -65,6 +67,7 @@ public class UserService {
         if (request.getRole() != null) user.setRole(request.getRole());
         if (request.getLocation() != null) user.setLocation(request.getLocation());
         if (request.getActive() != null) user.setActive(request.getActive());
+        if (request.getPermissions() != null) user.setPermissions(new HashSet<>(request.getPermissions()));
 
         return userRepository.save(user);
     }

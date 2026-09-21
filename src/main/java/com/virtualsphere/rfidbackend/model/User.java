@@ -6,6 +6,8 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * Mirrors the "users" table created by the admin desktop app - same columns,
@@ -44,4 +46,14 @@ public class User {
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
+
+    /**
+     * Fine-grained capabilities granted to this user (see {@link Permission}).
+     * ADMIN accounts have full access regardless of what's set here.
+     */
+    @ElementCollection(targetClass = Permission.class, fetch = FetchType.EAGER)
+    @CollectionTable(name = "user_permissions", joinColumns = @JoinColumn(name = "user_id"))
+    @Enumerated(EnumType.STRING)
+    @Column(name = "permission", length = 30)
+    private Set<Permission> permissions = new HashSet<>();
 }

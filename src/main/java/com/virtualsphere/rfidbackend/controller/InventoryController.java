@@ -21,6 +21,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
@@ -45,6 +46,7 @@ public class InventoryController {
 
     @GetMapping
     @Operation(tags = "Admin - Inventory")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('PERM_SCAN_READ')")
     public List<InventoryResponse> list(
             @RequestParam(required = false) String q,
             @RequestParam(required = false) InventoryStatus status,
@@ -61,6 +63,7 @@ public class InventoryController {
 
     @GetMapping("/{epc}")
     @Operation(tags = "Admin - Inventory")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('PERM_SCAN_READ')")
     public InventoryResponse getByEpc(@PathVariable String epc, @AuthenticationPrincipal UserDetails principal) {
         return InventoryResponse.from(inventoryService.findByEpc(epc, currentUser(principal)));
     }
@@ -75,6 +78,7 @@ public class InventoryController {
 
     @PutMapping("/{id}")
     @Operation(tags = "Admin - Inventory")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('PERM_UPDATE_STATUS')")
     public InventoryResponse update(@PathVariable Long id, @Valid @RequestBody InventoryRequest request,
                                      @AuthenticationPrincipal UserDetails principal) {
         return InventoryResponse.from(inventoryService.update(id, request, currentUser(principal)));
@@ -94,6 +98,7 @@ public class InventoryController {
      * Inventory" report (BRD 2.1.2).
      */
     @PostMapping("/scan-verify")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('PERM_UPDATE_STATUS')")
     public ScanVerifyResponse scanVerify(@Valid @RequestBody ScanVerifyRequest request,
                                           @AuthenticationPrincipal UserDetails principal) {
         return inventoryService.scanVerify(request, currentUser(principal));
@@ -107,6 +112,7 @@ public class InventoryController {
      * accurate regardless of when the sync call actually reaches the server.
      */
     @PostMapping("/sync")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('PERM_UPDATE_STATUS')")
     public InventorySyncResponse sync(@Valid @RequestBody InventorySyncRequest request,
                                        @AuthenticationPrincipal UserDetails principal) {
         return inventoryService.syncEvents(request, currentUser(principal));
@@ -120,6 +126,7 @@ public class InventoryController {
      * report; use the plain GET for a read-only peek that shouldn't.
      */
     @PostMapping("/scan-log")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('PERM_SCAN_READ')")
     public ScanLogResponse scanLog(@Valid @RequestBody ScanLogRequest request,
                                     @AuthenticationPrincipal UserDetails principal) {
         return inventoryService.logScan(request, currentUser(principal));
@@ -134,6 +141,7 @@ public class InventoryController {
      */
     @GetMapping("/export")
     @Operation(tags = "Admin - Inventory")
+    @PreAuthorize("hasRole('ADMIN') or hasAuthority('PERM_SCAN_READ')")
     public ResponseEntity<byte[]> export(
             @RequestParam(required = false) String q,
             @RequestParam(required = false) InventoryStatus status,

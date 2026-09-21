@@ -1,8 +1,11 @@
 package com.virtualsphere.rfidbackend.dto;
 
+import com.virtualsphere.rfidbackend.model.Permission;
 import com.virtualsphere.rfidbackend.model.Role;
 import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
+
+import java.util.Set;
 
 /**
  * Used for both create and update. On create, username + password are required;
@@ -18,4 +21,7 @@ public class UserRequest {
     private Role role;
     private String location;
     private Boolean active;
+
+    /** Null = unchanged on update; empty set clears all permissions. */
+    private Set<Permission> permissions;
 }
