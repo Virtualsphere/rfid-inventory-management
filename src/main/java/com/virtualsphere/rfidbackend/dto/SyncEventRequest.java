@@ -18,7 +18,12 @@ public class SyncEventRequest {
     @NotBlank
     private String epc;
 
-    /** IN or OUT - the status the handheld scan should set the item to. */
+    /**
+     * The status the handheld scan should set the item to - IN, OUT, or MISSING.
+     * MISSING here is always a deliberate manual call by the operator (e.g. after
+     * reviewing a scan-verify result and confirming an item is really gone), not
+     * something scan-verify sets automatically.
+     */
     @NotNull
     private InventoryStatus status;
 

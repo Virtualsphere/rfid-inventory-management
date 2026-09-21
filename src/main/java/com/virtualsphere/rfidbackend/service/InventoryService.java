@@ -121,6 +121,13 @@ public class InventoryService {
      * at a different location), UNKNOWN (not registered anywhere), UNAVAILABLE
      * (registered here, but wasn't IN before this scan) - persisted as a
      * ScanReport so the result is backend-truth, not device-computed.
+     *
+     * NOTE: a scan pass is not assumed to be exhaustive - an item that's
+     * expected but wasn't scanned is only reported in missingItems, never
+     * auto-flipped to MISSING in the database. The operator may have simply
+     * skipped it on purpose (e.g. scanning one cart out of several at the same
+     * location). Marking an item MISSING for real is a deliberate action the
+     * user takes afterwards (PUT /api/inventory/{id} or POST /api/inventory/sync).
      */
     @Transactional
     public ScanVerifyResponse scanVerify(ScanVerifyRequest request, User requester) {
@@ -179,23 +186,16 @@ public class InventoryService {
             }
         }
 
+        // Reported as candidates for review, not auto-persisted as MISSING - the
+        // scan pass may have deliberately skipped some of these (see method note).
         List<InventoryItem> missing = expected.stream()
                 .filter(i -> !scannedEpcs.contains(i.getEpc().toUpperCase()))
                 .toList();
-        missing.forEach(i -> {
-            i.setStatus(InventoryStatus.MISSING);
-            reportItems.add(ScanReportService.item(i.getEpc(), ScanCategory.MISSING, i.getProductName(),
-                    i.getLocation(), InventoryStatus.IN));
-        });
+        missing.forEach(i -> reportItems.add(ScanReportService.item(i.getEpc(), ScanCategory.MISSING,
+                i.getProductName(), i.getLocation(), InventoryStatus.IN)));
 
         inventoryItemRepository.saveAll(found);
         inventoryItemRepository.saveAll(unavailable);
-        inventoryItemRepository.saveAll(missing);
-
-        for (InventoryItem m : missing) {
-            activityLogService.log(m.getEpc(), ActivityAction.MISSING_DETECTED, requester.getUsername(),
-                    request.getLocation(), "Marked IN but not found during physical scan verification", scanTime);
-        }
 
         ScanReport report = scanReportService.save(ScanReportType.BULK, request.getLocation(),
                 requester.getUsername(), scanTime, request.getDurationSeconds(), expectedEpcs.size(), reportItems);
@@ -309,8 +309,11 @@ public class InventoryService {
             InventoryItem saved = inventoryItemRepository.save(item);
             byEpc.put(epc, saved);
 
-            ActivityAction action = event.getStatus() == InventoryStatus.OUT
-                    ? ActivityAction.SCAN_OUT : ActivityAction.SCAN_IN;
+            ActivityAction action = switch (event.getStatus()) {
+                case OUT -> ActivityAction.SCAN_OUT;
+                case MISSING -> ActivityAction.MISSING_DETECTED;
+                case IN -> ActivityAction.SCAN_IN;
+            };
             activityLogService.log(epc, action, requester.getUsername(), targetLocation, event.getNotes(),
                     event.getScannedAt());
 
